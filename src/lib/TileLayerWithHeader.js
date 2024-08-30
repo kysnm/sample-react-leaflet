@@ -1,7 +1,7 @@
-// https://github.com/PaulLeCam/react-leaflet/issues/852#issuecomment-782525462
-import { createTileLayerComponent, updateGridLayer, withPane } from '@react-leaflet/core';
-import { TileLayer } from 'leaflet';
-
+// https://github.com/Leaflet/Leaflet/issues/2091#issuecomment-1892557572
+import { GridLayer } from "react-leaflet";
+import { withLeaflet } from "react-leaflet";
+import { TileLayer as LeafletTileLayer } from 'leaflet'
 
 async function fetchImage(url, callback, headers, abort) {
   const controller = new AbortController();
@@ -21,10 +21,10 @@ async function fetchImage(url, callback, headers, abort) {
   callback(blob);
 }
 
-var LTileLayerWithHeader = TileLayer.extend({
+const LTileLayerWithHeader = LeafletTileLayer.extend({
   initialize: function (url, options) {
     const { headers, abort, results, ...props } = options;
-    TileLayer.prototype.initialize.call(this, url, props);
+    LeafletTileLayer.prototype.initialize.call(this, url, props);
     this.headers = headers;
     this.abort = abort;
     this.results = results;
@@ -54,19 +54,45 @@ var LTileLayerWithHeader = TileLayer.extend({
   }
 });
 
-export const TileLayerWithHeader = createTileLayerComponent(
-  function createTileLayer({ params = {}, url, ...options }, context) {
-    return {
-      instance: new LTileLayerWithHeader(url, {
-        ...params,
-        ...withPane(options, context)
-      }),
-      context
-    };
-  }, function updateTileLayer(layer, props, prevProps) {
-    updateGridLayer(layer, props, prevProps);
+class TileLayerWithHeader extends GridLayer {
+  componentDidMount(...attributes) {
+    super.componentDidMount(...attributes);
+  }
 
-    if (props.params != null && props.params !== prevProps.params) {
-      layer.setParams(props.params);
+  createLeafletElement(props) {
+    return new LTileLayerWithHeader(props.url, this.getOptions(props));
+  }
+
+  createTile(coords, done) {
+    const url = this.getTileUrl(coords);
+    const img = document.createElement("img");
+    img.setAttribute("role", "presentation");
+
+    fetchImage(
+      url,
+      resp => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          img.src = reader.result;
+          if (this.results) {
+            this.results.next(reader.result);
+          };
+        };
+        reader.readAsDataURL(resp);
+        done(null, img);
+      },
+      this.headers,
+      this.abort
+    );
+    return img;
+  }
+
+  updateLeafletElement(fromProps, toProps) {
+    super.updateLeafletElement(fromProps, toProps);
+    if (toProps.url !== fromProps.url) {
+      this.leafletElement.setUrl(toProps.url);
     }
-  });
+  }
+}
+
+export default withLeaflet(TileLayerWithHeader);
